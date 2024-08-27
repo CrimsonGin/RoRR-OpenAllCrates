@@ -1,6 +1,6 @@
 ﻿{
 	"name": "OpenAllCrates",
-	"version_number": "1.0.1",
+	"version_number": "1.0.2",
 	"website_url": "https://github.com/jonstvns/RoRR-OpenAllCrates",
 	"description": "Open all existing command crates with a single button press",
 	"dependencies": [

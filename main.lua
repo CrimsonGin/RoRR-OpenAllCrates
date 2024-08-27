@@ -1,4 +1,4 @@
--- OpenAllCrates v1.0.1
+-- OpenAllCrates v1.0.2
 -- Limyc
 
 log.info("Successfully loaded ".._ENV["!guid"]..".")
@@ -10,7 +10,7 @@ local plugin_name = _ENV["!guid"]
 mods.on_all_mods_loaded(function() for _, m in pairs(mods) do if type(m) == "table" and m.RoRR_Modding_Toolkit then Actor = m.Actor Buff = m.Buff Callback = m.Callback Equipment = m.Equipment Helper = m.Helper Instance = m.Instance Item = m.Item Net = m.Net Object = m.Object Player = m.Player Resources = m.Resources Survivor = m.Survivor break end end 
 	mod_state = {}
 	mod_state.is_running = false
-	mod_state.disable_open_hotkey = false
+	mod_state.ignore_crate = nil
 end)
 -- Toml Helper
 mods.on_all_mods_loaded(function() for k, v in pairs(mods) do if type(v) == "table" and v.tomlfuncs then Toml = v end end 
@@ -139,15 +139,21 @@ end)
 
 gui.add_always_draw_imgui(function()
 	-- KEY_O
-	if not mod_state.disable_open_hotkey and ImGui.IsKeyPressed(mod_config.hotkey_open_crates) then
+	if ImGui.IsKeyPressed(mod_config.hotkey_open_crates) then
 		local crates = Instance.find_all(gm.constants.oCustomObject_pInteractableCrate)
 		for _, c in ipairs(crates) do
+			if mod_state.ignore_crate and mod_state.ignore_crate == c then 
+				goto continue 
+			end
+			
 			local choice = last_crate_choice[c.inventory + 1]
 			if choice and choice.obj_id then
 				log_info("spawn object id " .. choice.obj_id .. " from inventory " .. c.inventory)
 				gm.item_drop_object(choice.obj_id, c.x, c.y, c, false)
 				gm.instance_destroy(c)
 			end
+			
+			::continue::
 		end
 	end
 end)
@@ -155,6 +161,7 @@ end)
 -- ========== Main ==========
 
 gm.pre_code_execute(function(self, other, code, result, flags)
+	--log_hook(self, other, result, {})
 	-- save selected object for currently open crate inventory
 	if self.object_index == gm.constants.oCustomObject_pInteractableCrate
 	and code.name:match("oCustomObject_pInteractableCrate_Draw_0")
@@ -162,7 +169,7 @@ gm.pre_code_execute(function(self, other, code, result, flags)
 	and self.activator == Player.get_client()
 	and not self.is_scrapper then  
 		-- crate is open, disable the hotkey so we don't softlock
-		mod_state.disable_open_hotkey = true
+		mod_state.ignore_crate = self
 		
 		if not last_crate_choice[self.inventory + 1] then 
 			last_crate_choice[self.inventory + 1] = {}
@@ -189,11 +196,7 @@ gm.pre_code_execute(function(self, other, code, result, flags)
 				choice.selection = self.selection
 				log_info("set last crate object: " .. crate_choice_to_string(choice) .. " for inventory " .. self.inventory)
 			end
-			
-			-- crate is closing, we can use the hotkey again
-			mod_state.disable_open_hotkey = false
 		end
-		
     end
 end)
 
