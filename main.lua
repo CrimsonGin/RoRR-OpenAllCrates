@@ -1,36 +1,51 @@
--- OpenAllCrates v1.0.0
+-- OpenAllCrates v1.0.1
 -- Limyc
 
 log.info("Successfully loaded ".._ENV["!guid"]..".")
 
 local plugin_name = _ENV["!guid"]
 
+
 -- RoRR Modding Toolkit
-mods.on_all_mods_loaded(function() for _, m in pairs(mods) do if type(m) == "table" and m.RoRR_Modding_Toolkit then Actor = m.Actor Buff = m.Buff Callback = m.Callback Equipment = m.Equipment Helper = m.Helper Instance = m.Instance Item = m.Item Net = m.Net Object = m.Object Player = m.Player Resources = m.Resources Survivor = m.Survivor break end end end)
+mods.on_all_mods_loaded(function() for _, m in pairs(mods) do if type(m) == "table" and m.RoRR_Modding_Toolkit then Actor = m.Actor Buff = m.Buff Callback = m.Callback Equipment = m.Equipment Helper = m.Helper Instance = m.Instance Item = m.Item Net = m.Net Object = m.Object Player = m.Player Resources = m.Resources Survivor = m.Survivor break end end 
+	mod_state = {}
+	mod_state.is_running = false
+	mod_state.gui_debug_open = true
+	mod_state.gui_hud_open = true
+end)
 -- Toml Helper
 mods.on_all_mods_loaded(function() for k, v in pairs(mods) do if type(v) == "table" and v.tomlfuncs then Toml = v end end 
-	config = {
-		enable_logs = false,
+	mod_config = {
+		hotkey_open_crates = 79,
 		show_hud = true,
 		hud_scale = 1.0,
-		hud_position_x = 0.0,
+		hud_position_x = 0.001,
 		hud_position_y = 0.1,
 		hud_element_spacing = 0,
-		hud_group_spacing = 0,
+		hud_group_spacing = 8,
 		hud_horizontal_layout = false,
 		hud_rtl = false, -- right to left render
+		enable_logs = false,
+		debug_draw = false,
 	}
-	config = Toml.config_update(plugin_name, config)
+	mod_config = Toml.config_update(plugin_name, mod_config)
 end)
 
 local last_crate_choice = {}
+local disable_open_hotkey = false
 local gm_hud_scale = gm.prefs_get_hud_scale()
 local gm_window_width = gm.window_get_width()
 local gm_window_height = gm.window_get_height()
 
 local function log_info(s)
-	if config.enable_logs then
+	if mod_config.enable_logs then
 		log.info(s)
+	end
+end
+
+local function log_hook(self, other, result, args)
+	if mod_config.enable_logs then
+		Helper.log_hook(self, other, result, args)
 	end
 end
 
@@ -66,48 +81,75 @@ local function get_sprite_index(obj_id)
 	return -4.0
 end
 
+crates_key = 79
+
 gui.add_to_menu_bar(function()
 	local pressed = false
 	local changed = false
-	config.enable_logs, pressed = ImGui.Checkbox("Enable Logs", config.enable_logs)
+	
+	ImGui.Spacing()
+	ImGui.Text("Hotkeys")
+	ImGui.Indent()
+	
+	pressed, mod_config.hotkey_open_crates = ImGui.Hotkey("Open Crates", mod_config.hotkey_open_crates)
 	if pressed then changed = true end
 	
-	config.show_hud, pressed = ImGui.Checkbox("show_hud", config.show_hud)
+	ImGui.Unindent()
+	ImGui.Spacing()
+	ImGui.Text("HUD")
+	ImGui.Indent()
+	
+	mod_config.show_hud, pressed = ImGui.Checkbox("Show HUD", mod_config.show_hud)
 	if pressed then changed = true end
 	
-	config.hud_scale, pressed = ImGui.DragFloat("hud_scale", config.hud_scale, 0.01, 0, 4)
+	mod_config.hud_scale, pressed = ImGui.DragFloat("Scale", mod_config.hud_scale, 0.01, 0.1, 4)
 	if pressed then changed = true end
 	
-	config.hud_position_x, pressed = ImGui.DragFloat("hud_position_x", config.hud_position_x, 0.01, 0, 1)
+	mod_config.hud_position_x, pressed = ImGui.DragFloat("Position X", mod_config.hud_position_x, 0.001, 0, 1)
 	if pressed then changed = true end
 	
-	config.hud_position_y, pressed = ImGui.DragFloat("hud_position_y", config.hud_position_y, 0.01, 0, 1)
+	mod_config.hud_position_y, pressed = ImGui.DragFloat("Position Y", mod_config.hud_position_y, 0.001, 0, 1)
 	if pressed then changed = true end
 	
-	config.hud_element_spacing, pressed = ImGui.DragFloat("hud_element_spacing", config.hud_element_spacing)
+	mod_config.hud_element_spacing, pressed = ImGui.DragFloat("Element Spacing", mod_config.hud_element_spacing)
 	if pressed then changed = true end
 	
-	config.hud_group_spacing, pressed = ImGui.DragFloat("hud_group_spacing", config.hud_group_spacing)
+	mod_config.hud_group_spacing, pressed = ImGui.DragFloat("Group Spacing", mod_config.hud_group_spacing)
 	if pressed then changed = true end
-	--config.hud_horizontal_layout, pressed = ImGui.Checkbox("hud_horizontal_layout", config.hud_horizontal_layout)
-	--if pressed then changed = true end
-	--config.hud_rtl, pressed = ImGui.Checkbox("hud_rtl", config.hud_rtl)
-	--if pressed then changed = true end
+	
+	mod_config.hud_horizontal_layout, pressed = ImGui.Checkbox("Use Horizonal Layout", mod_config.hud_horizontal_layout)
+	if pressed then changed = true end
+	
+	mod_config.hud_rtl, pressed = ImGui.Checkbox("Draw Right to Left", mod_config.hud_rtl)
+	if pressed then changed = true end
+	
+	ImGui.Unindent()
+	ImGui.Spacing()
+	ImGui.Text("Debug")
+	ImGui.Indent()
+	
+	mod_config.enable_logs, pressed = ImGui.Checkbox("Enable Logs", mod_config.enable_logs)
+	if pressed then changed = true end
+	
+	mod_config.debug_draw, pressed = ImGui.Checkbox("Debug Draw", mod_config.debug_draw)
+	if pressed then changed = true end
+	
+	ImGui.Unindent()
 	
 	if changed then
-		Toml.save_cfg(plugin_name, config)
+		Toml.save_cfg(plugin_name, mod_config)
 	end
 end)
 
 gui.add_always_draw_imgui(function()
 	-- KEY_O
-	if ImGui.IsKeyPressed(79) then
+	if ImGui.IsKeyPressed(mod_config.hotkey_open_crates) then
 		local crates = Instance.find_all(gm.constants.oCustomObject_pInteractableCrate)
 		for _, c in ipairs(crates) do
-			local crate_choice = last_crate_choice[c.inventory + 1]
-			if crate_choice and crate_choice.obj_id then
-				log_info("spawn object id " .. crate_choice.obj_id .. " from inventory " .. c.inventory)
-				gm.item_drop_object(crate_choice.obj_id, c.x, c.y, c, false)
+			local choice = last_crate_choice[c.inventory + 1]
+			if choice and choice.obj_id then
+				log_info("spawn object id " .. choice.obj_id .. " from inventory " .. c.inventory)
+				gm.item_drop_object(choice.obj_id, c.x, c.y, c, false)
 				gm.instance_destroy(c)
 			end
 		end
@@ -119,42 +161,79 @@ end)
 gm.pre_code_execute(function(self, other, code, result, flags)
 	-- save selected object for currently open crate inventory
 	if self.object_index == gm.constants.oCustomObject_pInteractableCrate
+	and code.name:match("oCustomObject_pInteractableCrate_Draw_0")
 	and self.active 
-	and not self.is_scrapper 
-	and self.activator == Player.get_client() 
-	and code.name:match("oCustomObject_pInteractableCrate_Draw_0") then
+	and self.activator == Player.get_client()
+	and not self.is_scrapper then  
+		-- crate is open, disable the hotkey so we don't softlock
+		disable_open_hotkey = true
+		
 		if not last_crate_choice[self.inventory + 1] then 
 			last_crate_choice[self.inventory + 1] = {}
 			last_crate_choice[self.inventory + 1].crate_sprite = self.sprite_index
 			table.sort(last_crate_choice)
 		end
 		
-		local crate_choice = last_crate_choice[self.inventory + 1]
+		local choice = last_crate_choice[self.inventory + 1]
 		
 		if self.active == 1.0 and not self.was_selection_set then
-			if crate_choice.selection then
-				self.selection = crate_choice.selection
-				log_info("set crate selection to " .. crate_choice.selection)
+			if choice.selection then
+				self.selection = choice.selection
+				log_info("set crate selection to " .. choice.selection)
 			else
-				crate_choice.selection = self.selection
-				log_info("set last selection to " .. crate_choice.selection .. " for inventory " .. self.inventory)
+				choice.selection = self.selection
+				log_info("set last selection to " .. choice.selection .. " for inventory " .. self.inventory)
 			end
 			self.was_selection_set = 1.0
 		elseif self.active > 1.0 then
 			local new_obj_id = self.contents[self.selection + 1]
-			if crate_choice.obj_id ~= new_obj_id then
-				crate_choice.obj_id = new_obj_id
-				crate_choice.obj_sprite = get_sprite_index(new_obj_id)
-				crate_choice.selection = self.selection
-				log_info("set last crate object: " .. crate_choice_to_string(crate_choice) .. " for inventory " .. self.inventory)
+			if choice.obj_id ~= new_obj_id then
+				choice.obj_id = new_obj_id
+				choice.obj_sprite = get_sprite_index(new_obj_id)
+				choice.selection = self.selection
+				log_info("set last crate object: " .. crate_choice_to_string(choice) .. " for inventory " .. self.inventory)
 			end
+			
+			-- crate is closing, we can use the hotkey again
+			disable_open_hotkey = false
 		end
 		
     end
 end)
 
+
+local c_white = gm.make_colour_rgb(255, 255, 255)
+
+local draw_item_layout = function(sprite_index, x, y, sx, sy)
+	local sprite = gm.sprite_get_info(sprite_index)
+	local half_w = sprite.width * sx * 0.5
+	local half_h = sprite.height * sy * 0.5
+	local x_offset = sprite.xoffset * sx * 0.5
+	local y_offset = sprite.yoffset * sy * 0.5
+	x = x + half_w + x_offset
+	y = y + half_h
+	gm.draw_sprite_ext(sprite_index, 0, x - x_offset, y + y_offset, sx, sy, 0, c_white, 1)
+	return x + (half_w - x_offset), y + half_h
+end
+
+local draw_item_layout_horizontal = function(sprite_index, x, y, sx, sy)
+	local sprite = gm.sprite_get_info(sprite_index)
+	local half_w = sprite.width * sx * 0.5
+	local half_h = sprite.height * sy * 0.5
+	local x_offset = sprite.xoffset * sx * 0.5
+	local y_offset = sprite.yoffset * sy * 0.5
+	x = x + half_w + x_offset
+	y = y + half_h
+	gm.draw_sprite_ext(sprite_index, 0, x - x_offset, y + y_offset, sx, sy, 0, c_white, 1)
+	return x + (half_w - x_offset), y + half_h
+end
+	
 gm.post_code_execute(function(self, other, code, result, flags)
-	if not config or not config.show_hug then return end
+	if not mod_state or not mod_state.is_running
+	or not mod_config or not mod_config.show_hud then 
+		return 
+	end
+	
 	-- gm_Object_oInit_Draw_6 is screen space
 	-- gm_Object_oInit_Draw_7 is world space
 	if not code.name:match("gml_Object_oInit_Draw_6") then
@@ -162,43 +241,84 @@ gm.post_code_execute(function(self, other, code, result, flags)
 		return 
 	end
 	
-	local sx = gm_hud_scale * config.hud_scale
-	local sy = gm_hud_scale * config.hud_scale
-	local x = config.hud_position_x * gm_window_width
-	local y = config.hud_position_y * gm_window_height
-	local crate_offset_y = 17 * sy
-	local rot = 0
-	local c_white = gm.make_colour_rgb(255, 255, 255)
-	--gm.draw_sprite_ext(1509, 0, x, y + y_offset, sx, sy, rot, c_white, 1)
+	local get_sprite_layout_order = function(a, b)
+		if mod_config.hud_rtl then
+			return b, a
+		end
+		return a, b
+	end
+	
+	local sx = gm_hud_scale * mod_config.hud_scale
+	local sy = gm_hud_scale * mod_config.hud_scale
+	local x_start = mod_config.hud_position_x * gm_window_width
+	local y_start = mod_config.hud_position_y * gm_window_height
+	local x = x_start
+	local y = y_start
+	
 	for _, choice in pairs(last_crate_choice) do
 		if choice and choice.obj_sprite then
-			local crate_sprite = gm.sprite_get_info(choice.crate_sprite)
-			local crate_width = crate_sprite.width * sx
-			local crate_height = crate_sprite.height * sy
-			local x_pos = x + (crate_width * 0.5)
-			local y_pos = y + (crate_height * 0.5) + crate_offset_y
-			gm.draw_sprite_ext(choice.crate_sprite, 0, x_pos, y_pos, sx, sy, rot, c_white, 1)
+			local a, b = get_sprite_layout_order(choice.crate_sprite, choice.obj_sprite)
 			
-			obj_sprite = gm.sprite_get_info(choice.obj_sprite)
-			local obj_width = obj_sprite.width * sx
-			local obj_height = obj_sprite.height * sy
-			x_pos = x_pos + (crate_width * 0.5) + config.hud_element_spacing + (obj_width * 0.5)
-			y_pos = y + (obj_height * 0.5)
-			gm.draw_sprite_ext(choice.obj_sprite, 0, x_pos, y_pos, sx, sy, rot, c_white, 1)
+			x, _ = draw_item_layout(a, x, y, sx, sy, 0, 0)
+			x = x + (mod_config.hud_element_spacing * sx)
+			x, y = draw_item_layout(b, x, y, sx, sy, 0, 0)
 			
-			y = y + (config.hud_group_spacing * sy)
+			if mod_config.hud_horizontal_layout then
+				x = x + (mod_config.hud_group_spacing * sx)
+				y = y_start
+			else
+				x = x_start
+				y = y + (mod_config.hud_group_spacing * sy)
+			end
 		end
+	end
+
+	if mod_config.debug_draw then
+		local white_crate = 533
+		local meat_chunk = 1509
+		local a, b = get_sprite_layout_order(white_crate, meat_chunk)
+			
+		x = x_start
+		y = y_start
+		
+		x, _ = draw_item_layout(a, x, y, sx, sy, 0, 0)
+		x = x + (mod_config.hud_element_spacing * sx)
+		x, y = draw_item_layout(b, x, y, sx, sy, 0, 0)
+		
+		if mod_config.hud_horizontal_layout then
+			x = x + (mod_config.hud_group_spacing * sx)
+			y = y_start
+		else
+			x = x_start
+			y = y + (mod_config.hud_group_spacing * sy)
+		end
+		
+		x, _ = draw_item_layout(a, x, y, sx, sy, 0, 0)
+		x = x + (mod_config.hud_element_spacing * sx)
+		x, y = draw_item_layout(b, x, y, sx, sy, 0, 0)
+
 	end
 end)
 
 gm.pre_script_hook(gm.constants.prefs_set_hud_scale, function(self, other, result, args)
+	--log_hook(self, other, result, args)
 	gm_hud_scale = args[1].value
 	log_info("set hud scale = " .. gm_hud_scale)
 end)
 
 gm.pre_script_hook(gm.constants.window_set_size, function(self, other, result, args)
-	Helper.log_hook(self, other, result, args)
+	--log_hook(self, other, result, args)
 	gm_window_width = args[1].value
 	gm_window_height = args[2].value
 	log_info("set window size scale = " .. gm_window_width .. "x" .. gm_window_height)
+end)
+
+gm.pre_script_hook(gm.constants.run_create, function(self, other, result, args)
+	--log_hook(self, other, result, args)
+	if mod_state then mod_state.is_running = true end
+end)
+
+gm.pre_script_hook(gm.constants.run_destroy, function(self, other, result, args)
+	--log_hook(self, other, result, args)
+	if mod_state then mod_state.is_running = false end
 end)

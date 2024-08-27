@@ -5,7 +5,7 @@
 	"description": "Open all existing command crates with a single button press",
 	"dependencies": [
 		"ReturnOfModding-ReturnOfModding-1.0.34",
-		"RoRRModdingToolkit-RoRR_Modding_Toolkit-1.0.8",
+		"RoRRModdingToolkit-RoRR_Modding_Toolkit-1.0.14",
 		"SmoothSpatula-TomlHelper-1.0.0"
 	]
 }
