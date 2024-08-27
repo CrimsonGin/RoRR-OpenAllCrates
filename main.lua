@@ -10,8 +10,7 @@ local plugin_name = _ENV["!guid"]
 mods.on_all_mods_loaded(function() for _, m in pairs(mods) do if type(m) == "table" and m.RoRR_Modding_Toolkit then Actor = m.Actor Buff = m.Buff Callback = m.Callback Equipment = m.Equipment Helper = m.Helper Instance = m.Instance Item = m.Item Net = m.Net Object = m.Object Player = m.Player Resources = m.Resources Survivor = m.Survivor break end end 
 	mod_state = {}
 	mod_state.is_running = false
-	mod_state.gui_debug_open = true
-	mod_state.gui_hud_open = true
+	mod_state.disable_open_hotkey = false
 end)
 -- Toml Helper
 mods.on_all_mods_loaded(function() for k, v in pairs(mods) do if type(v) == "table" and v.tomlfuncs then Toml = v end end 
@@ -32,7 +31,6 @@ mods.on_all_mods_loaded(function() for k, v in pairs(mods) do if type(v) == "tab
 end)
 
 local last_crate_choice = {}
-local disable_open_hotkey = false
 local gm_hud_scale = gm.prefs_get_hud_scale()
 local gm_window_width = gm.window_get_width()
 local gm_window_height = gm.window_get_height()
@@ -80,8 +78,6 @@ local function get_sprite_index(obj_id)
 	
 	return -4.0
 end
-
-crates_key = 79
 
 gui.add_to_menu_bar(function()
 	local pressed = false
@@ -143,7 +139,7 @@ end)
 
 gui.add_always_draw_imgui(function()
 	-- KEY_O
-	if ImGui.IsKeyPressed(mod_config.hotkey_open_crates) then
+	if not mod_state.disable_open_hotkey and ImGui.IsKeyPressed(mod_config.hotkey_open_crates) then
 		local crates = Instance.find_all(gm.constants.oCustomObject_pInteractableCrate)
 		for _, c in ipairs(crates) do
 			local choice = last_crate_choice[c.inventory + 1]
@@ -166,7 +162,7 @@ gm.pre_code_execute(function(self, other, code, result, flags)
 	and self.activator == Player.get_client()
 	and not self.is_scrapper then  
 		-- crate is open, disable the hotkey so we don't softlock
-		disable_open_hotkey = true
+		mod_state.disable_open_hotkey = true
 		
 		if not last_crate_choice[self.inventory + 1] then 
 			last_crate_choice[self.inventory + 1] = {}
@@ -195,7 +191,7 @@ gm.pre_code_execute(function(self, other, code, result, flags)
 			end
 			
 			-- crate is closing, we can use the hotkey again
-			disable_open_hotkey = false
+			mod_state.disable_open_hotkey = false
 		end
 		
     end
