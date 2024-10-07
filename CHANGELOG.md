@@ -1,3 +1,7 @@
+### v1.1.0
+* Fix broken code due to dependency updates
+* Improve performance when many crates are spawned in the level
+
 ### v1.0.2
 * Fix softlock if you hit the "open crate" key immediately after closing the crate UI
 

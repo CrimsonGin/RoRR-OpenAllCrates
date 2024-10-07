@@ -1,17 +1,18 @@
--- OpenAllCrates v1.0.2
+-- OpenAllCrates v1.1.0
 -- Limyc
 
 log.info("Successfully loaded ".._ENV["!guid"]..".")
 
 local plugin_name = _ENV["!guid"]
 
-
 -- RoRR Modding Toolkit
-mods.on_all_mods_loaded(function() for _, m in pairs(mods) do if type(m) == "table" and m.RoRR_Modding_Toolkit then Actor = m.Actor Buff = m.Buff Callback = m.Callback Equipment = m.Equipment Helper = m.Helper Instance = m.Instance Item = m.Item Net = m.Net Object = m.Object Player = m.Player Resources = m.Resources Survivor = m.Survivor break end end 
+mods.on_all_mods_loaded(function() for _, m in pairs(mods) do if type(m) == "table" and m.RoRR_Modding_Toolkit then for _, c in ipairs(m.Classes) do if m[c] then _G[c] = m[c] end end end end
 	mod_state = {}
 	mod_state.is_running = false
-	mod_state.ignore_crate = nil
+	mod_state.crate = nil
+	
 end)
+
 -- Toml Helper
 mods.on_all_mods_loaded(function() for k, v in pairs(mods) do if type(v) == "table" and v.tomlfuncs then Toml = v end end 
 	mod_config = {
@@ -140,17 +141,22 @@ end)
 gui.add_always_draw_imgui(function()
 	-- KEY_O
 	if ImGui.IsKeyPressed(mod_config.hotkey_open_crates) then
-		local crates = Instance.find_all(gm.constants.oCustomObject_pInteractableCrate)
+		log_info("open crates key pressed")
+		
+		local crates, found = Instance.find_all(gm.constants.oCustomObject_pInteractableCrate)
+		log_info("found = " .. tostring(found))
 		for _, c in ipairs(crates) do
-			if mod_state.ignore_crate and mod_state.ignore_crate == c then 
+			log_info("loop crate")
+			if mod_state.crate and mod_state.crate == c then 
+				log_info("ignore crate")
 				goto continue 
 			end
 			
 			local choice = last_crate_choice[c.inventory + 1]
 			if choice and choice.obj_id then
 				log_info("spawn object id " .. choice.obj_id .. " from inventory " .. c.inventory)
-				gm.item_drop_object(choice.obj_id, c.x, c.y, c, false)
-				gm.instance_destroy(c)
+				gm.item_drop_object(choice.obj_id, c.x, c.y, c.value, false)
+				gm.instance_destroy(c.value)
 			end
 			
 			::continue::
@@ -160,16 +166,42 @@ end)
 
 -- ========== Main ==========
 
-gm.pre_code_execute(function(self, other, code, result, flags)
-	--log_hook(self, other, result, {})
-	-- save selected object for currently open crate inventory
-	if self.object_index == gm.constants.oCustomObject_pInteractableCrate
-	and code.name:match("oCustomObject_pInteractableCrate_Draw_0")
-	and self.active 
-	and self.activator == Player.get_client()
-	and not self.is_scrapper then  
+local function set_crate_selection(crate)
+	local choice = last_crate_choice[crate.inventory + 1]
+	crate.selection = choice.selection
+	log_info("set crate selection to " .. choice.selection)
+end
+
+local function on_interactable_step(self, other, result, args)
+	if mod_state.crate
+	and mod_state.crate.active and mod_state.crate.active > 1.0
+	and not mod_state.crate.already_selected then 
+		-- store the most recent selection for the active crate type
+		local choice = last_crate_choice[mod_state.crate.inventory + 1]
+		local new_obj_id = mod_state.crate.contents[mod_state.crate.selection + 1]
+		if choice.obj_id ~= new_obj_id then
+			choice.obj_id = new_obj_id
+			choice.obj_sprite = get_sprite_index(new_obj_id)
+			choice.selection = mod_state.crate.selection
+			log_info("set last crate object: " .. crate_choice_to_string(choice) .. " for inventory " .. mod_state.crate.inventory)
+		end
+		mod_state.crate.already_selected = true
+	end
+end
+
+local function on_interactable_activate(self, other, result, args)
+	--log_hook(self, other, result, args)
+	if not Player then return end
+	local client = Player.get_client()
+
+	if self.active
+	and self.inventory
+	and client
+	and self.activator == client.value
+	and not self.is_scrapper then 
+		log_info("crate is open")
 		-- crate is open, disable the hotkey so we don't softlock
-		mod_state.ignore_crate = self
+		mod_state.crate = self
 		
 		if not last_crate_choice[self.inventory + 1] then 
 			last_crate_choice[self.inventory + 1] = {}
@@ -179,26 +211,22 @@ gm.pre_code_execute(function(self, other, code, result, flags)
 		
 		local choice = last_crate_choice[self.inventory + 1]
 		
+	-- save selected object for currently open crate inventory
 		if self.active == 1.0 and not self.was_selection_set then
 			if choice.selection then
-				self.selection = choice.selection
-				log_info("set crate selection to " .. choice.selection)
+				--self.selection = choice.selection
+				-- must delay setting crate selection by 1 frame because on_interactable_activate runs
+				-- before self.selection is reset internally to 0
+				Alarm.create(set_crate_selection, 1, self)
+				log_info("ALARM 1 FRAME: set crate selection to " .. choice.selection)
 			else
 				choice.selection = self.selection
 				log_info("set last selection to " .. choice.selection .. " for inventory " .. self.inventory)
 			end
 			self.was_selection_set = 1.0
-		elseif self.active > 1.0 then
-			local new_obj_id = self.contents[self.selection + 1]
-			if choice.obj_id ~= new_obj_id then
-				choice.obj_id = new_obj_id
-				choice.obj_sprite = get_sprite_index(new_obj_id)
-				choice.selection = self.selection
-				log_info("set last crate object: " .. crate_choice_to_string(choice) .. " for inventory " .. self.inventory)
-			end
 		end
     end
-end)
+end
 
 
 local c_white = gm.make_colour_rgb(255, 255, 255)
@@ -227,19 +255,14 @@ local draw_item_layout_horizontal = function(sprite_index, x, y, sx, sy)
 	return x + (half_w - x_offset), y + half_h
 end
 	
-gm.post_code_execute(function(self, other, code, result, flags)
+local function on_interactable_draw_hud(self, other, result, args)
 	if not mod_state or not mod_state.is_running
 	or not mod_config or not mod_config.show_hud then 
 		return 
 	end
 	
-	-- gm_Object_oInit_Draw_6 is screen space
-	-- gm_Object_oInit_Draw_7 is world space
-	if not code.name:match("gml_Object_oInit_Draw_6") then
-		--log_info(tostring(code.name))
-		return 
-	end
-	
+	--log_hook(self, other, result, args)
+
 	local get_sprite_layout_order = function(a, b)
 		if mod_config.hud_rtl then
 			return b, a
@@ -247,10 +270,12 @@ gm.post_code_execute(function(self, other, code, result, flags)
 		return a, b
 	end
 	
+	local cam = gm.view_get_camera(0)
+	
 	local sx = gm_hud_scale * mod_config.hud_scale
 	local sy = gm_hud_scale * mod_config.hud_scale
-	local x_start = mod_config.hud_position_x * gm_window_width
-	local y_start = mod_config.hud_position_y * gm_window_height
+	local x_start = gm.camera_get_view_x(cam) + mod_config.hud_position_x * gm_window_width
+	local y_start = gm.camera_get_view_y(cam) + mod_config.hud_position_y * gm_window_height
 	local x = x_start
 	local y = y_start
 	
@@ -297,7 +322,7 @@ gm.post_code_execute(function(self, other, code, result, flags)
 		x, y = draw_item_layout(b, x, y, sx, sy, 0, 0)
 
 	end
-end)
+end
 
 gm.pre_script_hook(gm.constants.prefs_set_hud_scale, function(self, other, result, args)
 	--log_hook(self, other, result, args)
@@ -321,3 +346,9 @@ gm.pre_script_hook(gm.constants.run_destroy, function(self, other, result, args)
 	--log_hook(self, other, result, args)
 	if mod_state then mod_state.is_running = false end
 end)
+
+function __initialize()
+	Callback.add("preStep", "openallcrates_on_interactable_step", on_interactable_step, true)
+	Callback.add("onInteractableActivate", "openallcrates_on_interactable_activate", on_interactable_activate, true)
+	Callback.add("onHUDDraw", "openallcrates_on_interactable_draw_hud", on_interactable_draw_hud, true)
+end
